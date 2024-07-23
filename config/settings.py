@@ -243,7 +243,7 @@ SASS_PROCESSOR_ROOT = os.path.join(BASE_DIR, "static/css")
 SASS_PROCESSOR_AUTO_INCLUDE = False
 SASS_OUTPUT_STYLE = "compressed"
 
-STATIC_URL = "static/"
+STATIC_URL = os.getenv("STATIC_URL", "static/")
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
 STATICFILES_DIRS = (os.path.join(BASE_DIR, "static"),)
