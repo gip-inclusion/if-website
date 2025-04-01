@@ -7,6 +7,7 @@ from forms.models import FormPage
 class FormsTestCase(WagtailPageTestCase):
     @classmethod
     def setUpTestData(cls) -> None:
+        call_command("collectstatic", "--ignore=*.sass", interactive=False)
         call_command("create_starter_pages")
 
     def test_form_page_is_renderable(self):
@@ -43,11 +44,11 @@ class FormsTestCase(WagtailPageTestCase):
         self.assertEqual(response.status_code, 200)
 
         self.assertInHTML(
-            """<li class="fr-error-text">Saisissez une adresse de courriel valide.</li>""",
+            """<li class="fr-error-text">Saisissez une adresse e-mail valide.</li>""",
             response.content.decode(),
         )
 
         self.assertInHTML(
-            """<li class="fr-error-text">Champ requis.</li>""",
+            """<li class="fr-error-text">Ce champ est obligatoire.</li>""",
             response.content.decode(),
         )

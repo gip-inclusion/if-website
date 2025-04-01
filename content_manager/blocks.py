@@ -3,14 +3,21 @@ from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _, pgettext_lazy
 from dsfr.constants import COLOR_CHOICES, COLOR_CHOICES_ILLUSTRATION, COLOR_CHOICES_SYSTEM, IMAGE_RATIOS, VIDEO_RATIOS
 from wagtail import blocks
-from wagtail.blocks import StructValue
+from wagtail.blocks import BooleanBlock, StructValue
 from wagtail.documents.blocks import DocumentChooserBlock
-from wagtail.images.blocks import ImageChooserBlock
+from wagtail.images.blocks import ImageBlock, ImageChooserBlock
+from wagtail.snippets.blocks import SnippetChooserBlock
 from wagtailmarkdown.blocks import MarkdownBlock
 
 from content_manager.constants import (
+    BUTTON_ICON_SIDE,
     BUTTON_TYPE_CHOICES,
+    BUTTONS_ALIGN_CHOICES,
+    GRID_3_4_6_CHOICES,
+    GRID_HORIZONTAL_ALIGN_CHOICES,
+    GRID_VERTICAL_ALIGN_CHOICES,
     HEADING_CHOICES,
+    HEADING_CHOICES_2_5,
     HORIZONTAL_CARD_IMAGE_RATIOS,
     LEVEL_CHOICES,
     LIMITED_RICHTEXTFIELD_FEATURES,
@@ -31,6 +38,27 @@ class BackgroundColorChoiceBlock(blocks.ChoiceBlock):
 
     class Meta:
         icon = "view"
+
+
+class IconPickerBlock(blocks.FieldBlock):
+    def __init__(self, required=True, help_text=None, validators=(), **kwargs):
+        self.field_options = {
+            "required": required,
+            "help_text": help_text,
+            "max_length": 70,
+            "min_length": 0,
+            "validators": [],
+        }
+        super().__init__(**kwargs)
+
+    @cached_property
+    def field(self):
+        field_kwargs = {"widget": DsfrIconPickerWidget()}
+        field_kwargs.update(self.field_options)
+        return forms.CharField(**field_kwargs)
+
+    class Meta:
+        icon = "radio-full"
 
 
 class LinkStructValue(blocks.StructValue):
@@ -86,8 +114,16 @@ class LinksVerticalListBlock(blocks.StreamBlock):
         template = "content_manager/blocks/links_vertical_list.html"
 
 
-class ButtonBlock(LinkBlock):
+class ButtonBlock(LinkWithoutLabelBlock):
+    text = blocks.CharBlock(label=_("Button label"), required=False)
     button_type = blocks.ChoiceBlock(label=_("Button type"), choices=BUTTON_TYPE_CHOICES, required=False)
+    icon_class = IconPickerBlock(label=_("Icon"), required=False)
+    icon_side = blocks.ChoiceBlock(
+        label=_("Icon side"),
+        choices=BUTTON_ICON_SIDE,
+        required=False,
+        default="",
+    )
 
     class Meta:
         value_class = LinkStructValue
@@ -110,25 +146,19 @@ class ButtonsVerticalListBlock(blocks.StreamBlock):
         template = "content_manager/blocks/buttons_vertical_list.html"
 
 
-class IconPickerBlock(blocks.FieldBlock):
-    def __init__(self, required=True, help_text=None, validators=(), **kwargs):
-        self.field_options = {
-            "required": required,
-            "help_text": help_text,
-            "max_length": 70,
-            "min_length": 0,
-            "validators": [],
-        }
-        super().__init__(**kwargs)
-
-    @cached_property
-    def field(self):
-        field_kwargs = {"widget": DsfrIconPickerWidget()}
-        field_kwargs.update(self.field_options)
-        return forms.CharField(**field_kwargs)
+class ButtonsListBlock(blocks.StructBlock):
+    buttons = ButtonsHorizontalListBlock(
+        label=_("Buttons"),
+        help_text=_(
+            """Please use only one primary button.
+            If you use icons, use them on all buttons and align them on the same side."""
+        ),
+    )
+    position = blocks.ChoiceBlock(label=_("Position"), choices=BUTTONS_ALIGN_CHOICES, default="", required=False)
 
     class Meta:
-        icon = "radio-full"
+        icon = "list-ul"
+        template = "content_manager/blocks/buttons_list.html"
 
 
 class SingleLinkBlock(LinkBlock):
@@ -307,7 +337,16 @@ class CardBlock(blocks.StructBlock):
     call_to_action = blocks.StreamBlock(
         [
             ("links", LinksVerticalListBlock()),
-            ("buttons", ButtonsHorizontalListBlock()),
+            (
+                "buttons",
+                ButtonsHorizontalListBlock(
+                    help_text=_(
+                        """Please use only one primary button.
+                        If you use icons, use them on all buttons and align them on the same side."""
+                    ),
+                    label=_("Buttons"),
+                ),
+            ),
         ],
         label=_("Bottom call-to-action: links or buttons"),
         help_text=_("Incompatible with the bottom detail text."),
@@ -407,6 +446,9 @@ class AccordionsBlock(blocks.StreamBlock):
     title = blocks.CharBlock(label=_("Title"))
     accordion = AccordionBlock(label=_("Accordion"), min_num=1, max_num=15)
 
+    class Meta:
+        template = "content_manager/blocks/accordions.html"
+
 
 class AlertBlock(blocks.StructBlock):
     title = blocks.CharBlock(label=_("Message title"), required=False)
@@ -487,12 +529,14 @@ class IframeBlock(blocks.StructBlock):
 
 
 class ImageAndTextBlock(blocks.StructBlock):
-    image = ImageChooserBlock(label=_("Image"))
+    image = ImageBlock(label=_("Image"))
     image_side = blocks.ChoiceBlock(
-        label=_("Side where the image is displayed"),
+        label=_("Image position"),
         choices=[
-            ("left", _("Left")),
-            ("right", _("Right")),
+            ("left", _("Left (displayed above text in mobile view)")),
+            ("left_below", _("Left (displayed below text in mobile view)")),
+            ("right", _("Right (displayed below text in mobile view)")),
+            ("right_above", _("Right (displayed above text in mobile view)")),
         ],
         default="right",
     )
@@ -500,6 +544,7 @@ class ImageAndTextBlock(blocks.StructBlock):
         label=_("Image width"),
         choices=[
             ("3", "3/12"),
+            ("4", "4/12"),
             ("5", "5/12"),
             ("6", "6/12"),
         ],
@@ -541,7 +586,20 @@ class ImageAndTextBlock(blocks.StructBlock):
         template = "content_manager/blocks/image_and_text.html"
 
 
-class ImageBlock(blocks.StructBlock):
+class CenteredImageStructValue(StructValue):
+    def extra_classes(self):
+        """
+        Define the extra classes for the image
+        """
+        image_ratio = self.get("image_ratio")
+
+        if image_ratio:
+            return f"fr-responsive-img {image_ratio}"
+        else:
+            return "fr-responsive-img"
+
+
+class CenteredImageBlock(blocks.StructBlock):
     title = blocks.CharBlock(label=_("Title"), required=False)
     heading_tag = blocks.ChoiceBlock(
         label=_("Heading level"),
@@ -573,6 +631,7 @@ class ImageBlock(blocks.StructBlock):
     class Meta:
         icon = "image"
         template = "content_manager/blocks/image.html"
+        value_class = CenteredImageStructValue
 
 
 class QuoteBlock(blocks.StructBlock):
@@ -598,7 +657,7 @@ class SeparatorBlock(blocks.StructBlock):
 
 class StepBlock(blocks.StructBlock):
     title = blocks.CharBlock(label=_("Title"))
-    detail = blocks.TextBlock(label=_("Detail"))
+    detail = blocks.TextBlock(label=_("Detail"), required=False)
 
 
 class StepsListBlock(blocks.StreamBlock):
@@ -607,19 +666,47 @@ class StepsListBlock(blocks.StreamBlock):
 
 class StepperBlock(blocks.StructBlock):
     title = blocks.CharBlock(label=_("Title"))
-    total = blocks.IntegerBlock(label=_("Number of steps"))
-    current = blocks.IntegerBlock(label=_("Current step"))
+    total = blocks.IntegerBlock(label=_("Number of steps"), min_value=1, max_value=8)
+    current = blocks.IntegerBlock(label=_("Current step"), min_value=1, max_value=8)
     steps = StepsListBlock(label=_("Steps"))
+
+    class Meta:
+        template = "content_manager/blocks/stepper.html"
 
 
 class TextAndCTA(blocks.StructBlock):
     text = blocks.RichTextBlock(label=_("Rich text"), required=False)
-    cta_label = blocks.CharBlock(
-        label=_("Call to action label"),
-        help_text=_("The link appears as a button under the text block"),
+    cta_buttons = blocks.StreamBlock(
+        [
+            (
+                "buttons",
+                ButtonsHorizontalListBlock(
+                    help_text=_(
+                        """Please use only one primary button.
+                        If you use icons, use them on all buttons and align them on the same side."""
+                    ),
+                    label=_("Buttons"),
+                ),
+            ),
+        ],
+        label=_("Call-to-action buttons"),
+        max_num=1,
         required=False,
     )
-    cta_url = blocks.CharBlock(label=_("Link"), required=False)
+    cta_label = blocks.CharBlock(
+        label=_("Call to action label  (obsolete)"),
+        help_text=_(
+            "This field is obsolete and will be removed in the near future. Please replace with the CTA buttons above."
+        ),
+        required=False,
+    )
+    cta_url = blocks.CharBlock(
+        label=_("Link (obsolete)"),
+        help_text=_(
+            "This field is obsolete and will be removed in the near future. Please replace with the CTA buttons above."
+        ),
+        required=False,
+    )
 
     class Meta:
         icon = "link"
@@ -666,19 +753,256 @@ class VideoBlock(blocks.StructBlock):
         template = "content_manager/blocks/video.html"
 
 
+class VerticalContactCardStructValue(blocks.StructValue):
+    def display(self):
+        contact = self.get("contact", None)
+
+        name = self.get("name", "")
+        if contact and not name:
+            name = contact.name
+
+        role = self.get("role", "")
+        if contact and not role:
+            role = contact.role
+
+        organization = self.get("organization", "")
+        if contact and not organization:
+            organization = contact.organization.name
+
+        image = self.get("image", "")
+        if contact and not image:
+            image = contact.image
+
+        return {"name": name, "role": role, "organization": organization, "image": image}
+
+    def enlarge_link(self):
+        """
+        Determine if we need (and can) enlarge the link on the card.
+        This requires:
+        - That a link is present
+        - That no other link is used on the card (such as a tag with a link, or a call-to-action)
+        """
+        link = self.get("link")
+        tags = self.get("tags")
+        call_to_action = self.get("call_to_action", "")
+
+        if not (link and link.url()):
+            return False
+
+        enlarge = True
+        if len(call_to_action):
+            enlarge = False
+        elif len(tags):
+            tags_list = tags.raw_data
+            for tag in tags_list:
+                if (
+                    tag["value"]["link"]["page"] is not None
+                    or tag["value"]["link"]["document"] is not None
+                    or tag["value"]["link"]["external_url"] != ""
+                ):
+                    enlarge = False
+
+        return enlarge
+
+
+class VerticalContactCardBlock(blocks.StructBlock):
+    contact = SnippetChooserBlock(
+        "blog.Person",
+        label=_("Person"),
+        help_text=_("Optional, all values can be manually specified or overriden below"),
+        required=False,
+    )
+    link = LinkWithoutLabelBlock(
+        label=_("Link"),
+        required=False,
+    )
+    heading_tag = blocks.ChoiceBlock(
+        label=_("Heading level"),
+        choices=HEADING_CHOICES,
+        required=False,
+        default="h3",
+        help_text=_("Adapt to the page layout. Defaults to heading 3."),
+    )
+    name = blocks.CharBlock(label=_("Name"), max_length=255, required=False)
+    role = blocks.CharBlock(label=_("Role"), max_length=255, required=False)
+    organization = blocks.CharBlock(label=_("Organization"), max_length=255, required=False)
+    contact_info = blocks.CharBlock(label=_("Contact info"), max_length=500, required=False)
+    image = ImageChooserBlock(label="Image", required=False)
+    tags = TagListBlock(label=_("Tags"), required=False)
+
+    class Meta:
+        icon = "user"
+        value_class = VerticalContactCardStructValue
+        template = ("content_manager/blocks/contact_card_vertical.html",)
+
+
+## Other apps-related blocks
+class RecentEntriesStructValue(blocks.StructValue):
+    """
+    Get and filter the recent entries for either a blog index or an events page index
+    """
+
+    def posts(self):
+        index_page = self.get("index_page")
+        is_blog = False
+
+        if not index_page:
+            is_blog = True
+            index_page = self.get("blog")
+
+        posts = index_page.posts
+
+        category_filter = self.get("category_filter")
+        if category_filter:
+            if is_blog:
+                posts = posts.filter(blog_categories=category_filter)
+            else:
+                posts = posts.filter(event_categories=category_filter)
+
+        tag_filter = self.get("tag_filter")
+        if tag_filter:
+            posts = posts.filter(tags=tag_filter)
+
+        author_filter = self.get("author_filter")
+        if author_filter:
+            posts = posts.filter(authors=author_filter)
+
+        source_filter = self.get("source_filter")
+        if source_filter:
+            posts = posts.filter(authors__organization=source_filter)
+
+        entries_count = self.get("entries_count")
+        return posts[:entries_count]
+
+    def current_filters(self) -> dict:
+        filters = {}
+
+        category_filter = self.get("category_filter")
+        if category_filter:
+            filters["category"] = category_filter.slug
+
+        tag_filter = self.get("tag_filter")
+        if tag_filter:
+            filters["tag"] = tag_filter.slug
+
+        author_filter = self.get("author_filter")
+        if author_filter:
+            filters["author"] = author_filter.id
+
+        source_filter = self.get("source_filter")
+        if source_filter:
+            filters["source"] = source_filter.slug
+
+        return filters
+
+    def sub_heading_tag(self):
+        """
+        Used for the filters section titles
+        """
+        heading_tag = self.get("heading_tag")
+        if heading_tag == "h2":
+            return "h3"
+        elif heading_tag == "h3":
+            return "h4"
+        elif heading_tag == "h4":
+            return "h5"
+        else:
+            return "h6"
+
+
+class BlogRecentEntriesBlock(blocks.StructBlock):
+    title = blocks.CharBlock(label=_("Title"), required=False)
+    heading_tag = blocks.ChoiceBlock(
+        label=_("Heading level"),
+        choices=HEADING_CHOICES_2_5,
+        required=False,
+        default="h2",
+        help_text=_("Adapt to the page layout. Defaults to heading 2."),
+    )
+    blog = blocks.PageChooserBlock(label=_("Blog"), page_type="blog.BlogIndexPage")
+    entries_count = blocks.IntegerBlock(
+        label=_("Number of entries"), required=False, min_value=1, max_value=8, default=3
+    )
+    category_filter = SnippetChooserBlock("blog.Category", label=_("Filter by category"), required=False)
+    tag_filter = SnippetChooserBlock("content_manager.Tag", label=_("Filter by tag"), required=False)
+    author_filter = SnippetChooserBlock("blog.Person", label=_("Filter by author"), required=False)
+    source_filter = SnippetChooserBlock(
+        "blog.Organization",
+        label=_("Filter by source"),
+        help_text=_("The source is the organization of the post author"),
+        required=False,
+    )
+    show_filters = BooleanBlock(label=_("Show filters"), default=False, required=False)
+
+    class Meta:
+        icon = "placeholder"
+        template = ("content_manager/blocks/blog_recent_entries.html",)
+        value_class = RecentEntriesStructValue
+
+
+class EventsRecentEntriesBlock(blocks.StructBlock):
+    title = blocks.CharBlock(label=_("Title"), required=False)
+    heading_tag = blocks.ChoiceBlock(
+        label=_("Heading level"),
+        choices=HEADING_CHOICES_2_5,
+        required=False,
+        default="h2",
+        help_text=_("Adapt to the page layout. Defaults to heading 2."),
+    )
+    index_page = blocks.PageChooserBlock(label=_("Event calendar"), page_type="events.EventsIndexPage")
+    entries_count = blocks.IntegerBlock(
+        label=_("Number of entries"), required=False, min_value=1, max_value=8, default=3
+    )
+    category_filter = SnippetChooserBlock("blog.Category", label=_("Filter by category"), required=False)
+    tag_filter = SnippetChooserBlock("content_manager.Tag", label=_("Filter by tag"), required=False)
+    author_filter = SnippetChooserBlock("blog.Person", label=_("Filter by author"), required=False)
+    source_filter = SnippetChooserBlock(
+        "blog.Organization",
+        label=_("Filter by source"),
+        help_text=_("The source is the organization of the post author"),
+        required=False,
+    )
+    show_filters = BooleanBlock(label=_("Show filters"), default=False, required=False)
+
+    class Meta:
+        icon = "placeholder"
+        template = ("content_manager/blocks/events_recent_entries.html",)
+        value_class = RecentEntriesStructValue
+
+
 ## Page structure blocks
 class CommonStreamBlock(blocks.StreamBlock):
     text = blocks.RichTextBlock(label=_("Rich text"))
-    image = ImageBlock(label=_("Image"))
+    image = CenteredImageBlock(label=_("Centered image"))
+    imageandtext = ImageAndTextBlock(label=_("Image and text"))
+    alert = AlertBlock(label=_("Alert message"))
+    text_cta = TextAndCTA(label=_("Text and call to action"))
     video = VideoBlock(label=_("Video"))
     transcription = TranscriptionBlock(label=_("Transcription"))
+    badges_list = BadgesListBlock(label=_("Badge list"))
+    tags_list = TagListBlock(label=_("Tag list"))
+    buttons_list = ButtonsListBlock(label=_("Button list"))
+    accordions = AccordionsBlock(label=_("Accordions"), group=_("DSFR components"))
     callout = CalloutBlock(label=_("Callout"), group=_("DSFR components"))
     highlight = HighlightBlock(label=_("Highlight"), group=_("DSFR components"))
     quote = QuoteBlock(label=_("Quote"), group=_("DSFR components"))
-    text_cta = TextAndCTA(label=_("Text and call to action"))
+    stepper = StepperBlock(label=_("Stepper"), group=_("DSFR components"))
     link = SingleLinkBlock(label=_("Single link"))
     iframe = IframeBlock(label=_("Iframe"), group=_("DSFR components"))
     tile = TileBlock(label=_("Tile"), group=_("DSFR components"))
+    blog_recent_entries = BlogRecentEntriesBlock(label=_("Blog recent entries"), group=_("Website structure"))
+    events_recent_entries = EventsRecentEntriesBlock(
+        label=_("Event calendar recent entries"), group=_("Website structure")
+    )
+    stepper = StepperBlock(label=_("Stepper"), group=_("DSFR components"))
+    markdown = MarkdownBlock(label=_("Markdown"), group=_("Expert syntax"))
+    iframe = IframeBlock(label=_("Iframe"), group=_("Expert syntax"))
+    html = blocks.RawHTMLBlock(
+        readonly=True,
+        help_text=_("Warning: Use HTML block with caution. Malicious code can compromise the security of the site."),
+        group=_("Expert syntax"),
+    )
+    separator = SeparatorBlock(label=_("Separator"), group=_("Page structure"))
 
     class Meta:
         icon = "dots-horizontal"
@@ -686,6 +1010,54 @@ class CommonStreamBlock(blocks.StreamBlock):
 
 class ColumnBlock(CommonStreamBlock):
     card = VerticalCardBlock(label=_("Vertical card"), group=_("DSFR components"))
+    contact_card = VerticalContactCardBlock(label=_("Contact card"), group=_("Extra components"))
+
+
+class GridPositionStructValue(blocks.StructValue):
+    def grid_position(self):
+        position = []
+
+        horizontal_align = self.get("horizontal_align", None)
+        if horizontal_align:
+            position.append(f"fr-grid-row--{horizontal_align}")
+
+        vertical_align = self.get("vertical_align", None)
+        if vertical_align:
+            position.append(f"fr-grid-row--{vertical_align}")
+
+        return " ".join(position)
+
+
+class ItemGridBlock(blocks.StructBlock):
+    column_width = blocks.ChoiceBlock(
+        label=_("Column width"),
+        choices=GRID_3_4_6_CHOICES,
+        default="4",
+    )
+    horizontal_align = blocks.ChoiceBlock(
+        label=_("Horizontal align"), choices=GRID_HORIZONTAL_ALIGN_CHOICES, default="left", required=False
+    )
+    vertical_align = blocks.ChoiceBlock(
+        label=_("Vertical align"), choices=GRID_VERTICAL_ALIGN_CHOICES, default="middle", required=False
+    )
+    items = ColumnBlock(label=_("Items"))
+
+    class Meta:
+        icon = "grip"
+        template = "content_manager/blocks/item_grid.html"
+        value_class = GridPositionStructValue
+
+
+class TabBlock(blocks.StructBlock):
+    title = blocks.CharBlock(label=_("Title"))
+    content = ColumnBlock(label=_("Content"))
+
+
+class TabsBlock(blocks.StreamBlock):
+    tabs = TabBlock(label=_("Tab"), min_num=1, max_num=15)
+
+    class Meta:
+        template = "content_manager/blocks/tabs.html"
 
 
 class AdjustableColumnBlock(blocks.StructBlock):
@@ -707,6 +1079,21 @@ class AdjustableColumnBlock(blocks.StructBlock):
 
     class Meta:
         icon = "order-down"
+
+
+class BlockMarginStructValue(blocks.StructValue):
+    def vertical_margin(self):
+        margin = []
+
+        top_margin = self.get("top_margin", None)
+        if top_margin:
+            margin.append(f"fr-mt-{top_margin}w")
+
+        bottom_margin = self.get("bottom_margin", None)
+        if bottom_margin:
+            margin.append(f"fr-mb-{bottom_margin}w")
+
+        return " ".join(margin)
 
 
 class MultiColumnsBlock(CommonStreamBlock):
@@ -741,16 +1128,33 @@ class MultiColumnsWithTitleBlock(blocks.StructBlock):
         default="h2",
         help_text=_("Adapt to the page layout. Defaults to heading 2."),
     )
+    top_margin = blocks.IntegerBlock(
+        label=_("Top margin"),
+        min_value=0,
+        max_value=15,
+        default=5,
+        required=False,
+    )
+    bottom_margin = blocks.IntegerBlock(
+        label=_("Bottom margin"),
+        min_value=0,
+        max_value=15,
+        default=5,
+        required=False,
+    )
     columns = MultiColumnsBlock(label=_("Columns"))
 
     class Meta:
         icon = "dots-horizontal"
         template = "content_manager/blocks/multicolumns.html"
+        value_class = BlockMarginStructValue
 
 
 class FullWidthBlock(CommonStreamBlock):
     image_and_text = ImageAndTextBlock(label=_("Image and text"))
     card = HorizontalCardBlock(label=_("Horizontal card"), group=_("DSFR components"))
+    tabs = TabsBlock(label=_("Tabs"), group=_("DSFR components"))
+    item_grid = ItemGridBlock(label=_("Item grid"), group=_("Page structure"))
 
     class Meta:
         icon = "minus"
@@ -763,50 +1167,102 @@ class FullWidthBackgroundBlock(blocks.StructBlock):
         required=False,
         help_text=_("Uses the French Design System colors"),
     )
+    top_margin = blocks.IntegerBlock(
+        label=_("Top margin"),
+        min_value=0,
+        max_value=15,
+        default=5,
+        required=False,
+    )
+    bottom_margin = blocks.IntegerBlock(
+        label=_("Bottom margin"),
+        min_value=0,
+        max_value=15,
+        default=5,
+        required=False,
+    )
+
     content = FullWidthBlock(label=_("Content"))
 
     class Meta:
         icon = "minus"
         template = "content_manager/blocks/full_width_background.html"
+        value_class = BlockMarginStructValue
+
+
+class PageTreeBlock(blocks.StructBlock):
+    page = blocks.PageChooserBlock(label=_("Parent page"))
+
+    class Meta:
+        icon = "minus"
+        template = "content_manager/blocks/pagetree.html"
+
+
+class SideMenuBlock(blocks.StreamBlock):
+    html = blocks.RawHTMLBlock(
+        label="HTML",
+        help_text=_("Warning: Use HTML block with caution. Malicious code can compromise the security of the site."),
+    )
+    pagetree = PageTreeBlock(label=_("Page tree"))
+
+    class Meta:
+        icon = "minus"
+
+
+class FullWidthBackgroundWithSidemenuBlock(blocks.StructBlock):
+    bg_image = ImageChooserBlock(label=_("Background image"), required=False)
+    bg_color_class = BackgroundColorChoiceBlock(
+        label=_("Background color"),
+        required=False,
+        help_text=_("Uses the French Design System colors"),
+    )
+    top_margin = blocks.IntegerBlock(
+        label=_("Top margin"),
+        min_value=0,
+        max_value=15,
+        default=5,
+        required=False,
+    )
+    bottom_margin = blocks.IntegerBlock(
+        label=_("Bottom margin"),
+        min_value=0,
+        max_value=15,
+        default=5,
+        required=False,
+    )
+
+    main_content = FullWidthBlock(label=_("Main content"))
+    sidemenu_title = blocks.CharBlock(label=_("Side menu title"), required=False)
+    sidemenu_content = SideMenuBlock(label=_("Side menu content"))
+
+    class Meta:
+        icon = "minus"
+        template = "content_manager/blocks/full_width_background_with_sidemenu.html"
+        value_class = BlockMarginStructValue
 
 
 STREAMFIELD_COMMON_BLOCKS = [
     ("paragraph", blocks.RichTextBlock(label=_("Rich text"))),
-    ("image", ImageBlock()),
+    ("image", CenteredImageBlock(label=_("Centered image"))),
     ("imageandtext", ImageAndTextBlock(label=_("Image and text"))),
     ("alert", AlertBlock(label=_("Alert message"))),
-    ("callout", CalloutBlock(label=_("Callout"), group=_("DSFR components"))),
-    ("highlight", HighlightBlock(label=_("Highlight"), group=_("DSFR components"))),
-    ("quote", QuoteBlock(label=_("Quote"), group=_("DSFR components"))),
+    ("text_cta", TextAndCTA(label=_("Text and call to action"))),
     ("video", VideoBlock(label=_("Video"))),
     ("transcription", TranscriptionBlock(label=_("Transcription"))),
     ("badges_list", BadgesListBlock(label=_("Badge list"))),
     ("tags_list", TagListBlock(label=_("Tag list"))),
+    ("buttons_list", ButtonsListBlock(label=_("Button list"))),
     ("link", SingleLinkBlock(label=_("Single link"))),
+    ("accordions", AccordionsBlock(label=_("Accordions"), group=_("DSFR components"))),
+    ("callout", CalloutBlock(label=_("Callout"), group=_("DSFR components"))),
+    ("highlight", HighlightBlock(label=_("Highlight"), group=_("DSFR components"))),
+    ("quote", QuoteBlock(label=_("Quote"), group=_("DSFR components"))),
+    ("stepper", StepperBlock(label=_("Stepper"), group=_("DSFR components"))),
     ("card", HorizontalCardBlock(label=_("Horizontal card"), group=_("DSFR components"))),
     ("tile", TileBlock(label=_("Tile"), group=_("DSFR components"))),
-    ("accordions", AccordionsBlock(label=_("Accordions"), group=_("DSFR components"))),
-    ("stepper", StepperBlock(label=_("Stepper"), group=_("DSFR components"))),
+    ("tabs", TabsBlock(label=_("Tabs"), group=_("DSFR components"))),
     ("markdown", MarkdownBlock(label=_("Markdown"), group=_("Expert syntax"))),
     ("iframe", IframeBlock(label=_("Iframe"), group=_("Expert syntax"))),
-    ("separator", SeparatorBlock(label=_("Separator"), group=_("Page structure"))),
-    ("multicolumns", MultiColumnsWithTitleBlock(label=_("Multiple columns"), group=_("Page structure"))),
-    ("fullwidthbackground", FullWidthBackgroundBlock(label=_("Full width background"), group=_("Page structure"))),
-    (
-        "subpageslist",
-        blocks.StaticBlock(
-            label=_("Subpages list"),
-            admin_text=_("A simple, alphabetical list of the subpages of the current page."),
-            template="content_manager/blocks/subpages_list.html",
-            group=_("Website structure"),
-        ),
-    ),
-]
-
-# See warning on https://docs.wagtail.org/en/latest/reference/streamfield/blocks.html#wagtail.blocks.RawHTMLBlock
-# There is currently no way to restrict a type of block depending on user permissions,
-# pending issue https://github.com/wagtail/wagtail/issues/6323
-STREAMFIELD_COMMON_BLOCKS += [
     (
         "html",
         blocks.RawHTMLBlock(
@@ -816,5 +1272,32 @@ STREAMFIELD_COMMON_BLOCKS += [
             ),
             group=_("Expert syntax"),
         ),
-    )
+    ),
+    ("separator", SeparatorBlock(label=_("Separator"), group=_("Page structure"))),
+    ("multicolumns", MultiColumnsWithTitleBlock(label=_("Multiple columns"), group=_("Page structure"))),
+    ("item_grid", ItemGridBlock(label=_("Item grid"), group=_("Page structure"))),
+    ("fullwidthbackground", FullWidthBackgroundBlock(label=_("Full width background"), group=_("Page structure"))),
+    (
+        "fullwidthbackgroundwithsidemenu",
+        FullWidthBackgroundWithSidemenuBlock(
+            label=_("Full width background with side menu"), group=_("Page structure")
+        ),
+    ),
+    (
+        "subpageslist",
+        blocks.StaticBlock(
+            label=_("Subpages list"),
+            admin_text=_("A simple, alphabetical list of the subpages of the current page."),
+            template="content_manager/blocks/subpages_list.html",
+            group=_("Website structure"),
+        ),
+    ),
+    (
+        "blog_recent_entries",
+        BlogRecentEntriesBlock(label=_("Blog recent entries"), group=_("Website structure")),
+    ),
+    (
+        "events_recent_entries",
+        EventsRecentEntriesBlock(label=_("Event calendar recent entries"), group=_("Website structure")),
+    ),
 ]

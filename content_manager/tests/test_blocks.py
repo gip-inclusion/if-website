@@ -1,13 +1,20 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
+from django.test import override_settings
 from wagtail.models import Page
 from wagtail.rich_text import RichText
 from wagtail.test.utils import WagtailPageTestCase
 
+from blog.models import BlogEntryPage, BlogIndexPage
 from content_manager.models import ContentPage
 from content_manager.utils import import_image
+from events.models import EventEntryPage, EventsIndexPage
+
+# Tests for blocks that have a value_class
+
+User = get_user_model()
 
 
-class HorizontalCardBlockCase(WagtailPageTestCase):
+class HorizontalCardBlockTestCase(WagtailPageTestCase):
     # Logic *should* be the same for a vertical card, but inside of a multiple columns block.
     def setUp(self):
         home = Page.objects.get(slug="home")
@@ -155,12 +162,12 @@ class HorizontalCardBlockCase(WagtailPageTestCase):
         self.assertInHTML("""<a href="https://www.info.gouv.fr">Sample card</a>""", response.content.decode())
 
         self.assertInHTML(
-            """<ul class="fr-btns-group fr-btns-group--inline-reverse fr-btns-group--inline-lg">
+            """<ul class="fr-btns-group fr-btns-group--inline-lg">
                 <li>
                     <a class="fr-btn fr-btn--secondary"
                     href="https://numerique.gouv.fr"
                     target="_blank"
-                    rel="noopener external">Label</a>
+                    rel="noopener external">Label <span class="fr-sr-only">Ouvre une nouvelle fenêtre</span></a>
                 </li>
             </ul>""",
             response.content.decode(),
@@ -264,7 +271,7 @@ class HorizontalCardBlockCase(WagtailPageTestCase):
         )
 
 
-class TileBlockCase(WagtailPageTestCase):
+class TileBlockTestCase(WagtailPageTestCase):
     def setUp(self):
         home = Page.objects.get(slug="home")
         self.admin = User.objects.create_superuser("test", "test@test.test", "pass")
@@ -317,3 +324,92 @@ class TileBlockCase(WagtailPageTestCase):
         response = self.client.get(url)
 
         self.assertContains(response, "fr-tile__header")
+
+    @override_settings(SF_SCHEME_DEPENDENT_SVGS=True)
+    def test_tile_manages_svg_image_if_setting_allows(self):
+        image_file = "static/artwork/technical-error.svg"
+        image = import_image(image_file, "Sample image")
+
+        body = [
+            (
+                "tile",
+                {
+                    "title": "Sample tile",
+                    "description": RichText('<p data-block-key="test">This is a sample tile.</p>'),
+                    "image": image,
+                },
+            )
+        ]
+
+        self.content_page.body = body
+        self.content_page.save()
+
+        url = self.content_page.url
+
+        response = self.client.get(url)
+
+        self.assertContains(response, "fr-tile__pictogram")
+
+
+class BlogRecentEntriesBlockTestCase(WagtailPageTestCase):
+    def setUp(self):
+        home_page = Page.objects.get(slug="home")
+        self.admin = User.objects.create_superuser("test", "test@test.test", "pass")
+        self.admin.save()
+
+        lorem_raw = "<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>"
+        lorem_body = []
+        lorem_body.append(("paragraph", RichText(lorem_raw)))
+
+        blog_index = home_page.add_child(
+            instance=BlogIndexPage(title="Actualités", body=lorem_body, slug="actualités", show_in_menus=True)
+        )
+
+        _blog_entry = blog_index.add_child(instance=BlogEntryPage(title="Article", body=lorem_body, slug="article"))
+
+        body = [
+            (
+                "blog_recent_entries",
+                {"title": "Actus", "heading_tag": "h2", "blog": blog_index, "entries_count": 4},
+            )
+        ]
+        self.content_page = home_page.add_child(
+            instance=ContentPage(title="Sample page", slug="content-page", owner=self.admin, body=body)
+        )
+        self.content_page.save()
+
+    def test_blog_recent_entries_is_renderable(self):
+        self.assertPageIsRenderable(self.content_page)
+
+
+class EventsRecentEntriesBlockTestCase(WagtailPageTestCase):
+    def setUp(self):
+        home_page = Page.objects.get(slug="home")
+        self.admin = User.objects.create_superuser("test", "test@test.test", "pass")
+        self.admin.save()
+
+        lorem_raw = "<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>"
+        lorem_body = []
+        lorem_body.append(("paragraph", RichText(lorem_raw)))
+
+        events_index = home_page.add_child(
+            instance=EventsIndexPage(title="Agenda", body=lorem_body, slug="agenda", show_in_menus=True)
+        )
+
+        _event_entry = events_index.add_child(
+            instance=EventEntryPage(title="Formation", body=lorem_body, slug="formation")
+        )
+
+        body = [
+            (
+                "events_recent_entries",
+                {"title": "Actus", "heading_tag": "h2", "index_page": events_index, "entries_count": 4},
+            )
+        ]
+        self.content_page = home_page.add_child(
+            instance=ContentPage(title="Sample page", slug="content-page", owner=self.admin, body=body)
+        )
+        self.content_page.save()
+
+    def test_events_recent_entries_is_renderable(self):
+        self.assertPageIsRenderable(self.content_page)

@@ -46,6 +46,44 @@ def richtext_p_add_class(value, class_name: str):
     paragraphs = soup.find_all("p")
 
     for p in paragraphs:
-        p["class"] = p.get("class", []) + [class_name]
+        p["class"] = p.get("class", []) + [class_name]  # type: ignore
 
     return mark_safe(str(soup))
+
+
+@register.simple_tag(takes_context=True)
+def toggle_url_filter(context, *_, **kwargs):
+    """
+    Sets a URL filter, or removes it if it is already in use.
+
+    The other filters can be passed through a dictionary or the GET parameters
+    """
+
+    filters_dict = kwargs.get("filters_dict", {})
+    if filters_dict:
+        url_params = filters_dict.copy()
+    else:
+        url_params = context["request"].GET.copy()
+
+    filters = [("author", "id"), ("category", "slug"), ("source", "slug"), ("tag", "slug"), ("year", "")]
+
+    for f in filters:
+        param = f[0]
+        attr = f[1]
+        val = kwargs.get(param, "")
+        current_val = context.get(f"current_{param}", "")
+
+        if val and val != current_val:
+            if attr:
+                url_params[param] = getattr(val, attr)
+            else:
+                url_params[param] = val
+        elif val and val == current_val:
+            url_params.pop(param, None)
+
+    url_string = "&".join(["{}={}".format(x[0], x[1]) for x in url_params.items()])
+
+    if url_string:
+        return f"?{url_string}"
+    else:
+        return ""

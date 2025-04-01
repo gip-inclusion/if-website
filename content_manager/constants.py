@@ -1,11 +1,53 @@
 from django.utils.translation import gettext_lazy as _
 
+HEADER_FIELDS = [
+    "header_image",
+    "header_with_title",
+    "header_color_class",
+    "header_large",
+    "header_darken",
+    "header_cta_text",
+    "header_cta_buttons",
+    "header_cta_label",
+    "header_cta_link",
+]
+
 BUTTON_TYPE_CHOICES = (
     ("fr-btn", _("Primary")),
     ("fr-btn fr-btn--secondary", _("Secundary")),
     ("fr-btn fr-btn--tertiary", _("Tertiary")),
     ("fr-btn fr-btn--tertiary-no-outline", _("Tertiary without border")),
 )
+
+BUTTON_ICON_SIDE = (
+    ("fr-btn--icon-left", _("Left")),
+    ("fr-btn--icon-right", _("Right")),
+)
+
+BUTTONS_ALIGN_CHOICES = (
+    ("", _("Left")),
+    ("fr-btns-group--center", _("Center")),
+    ("fr-btns-group--right", _("Right")),
+    ("fr-btns-group--right fr-btns-group--inline-reverse", _("Right (reverse order on desktop)")),
+)
+
+GRID_3_4_6_CHOICES = [
+    ("3", "3/12"),
+    ("4", "4/12"),
+    ("6", "6/12"),
+]
+
+GRID_HORIZONTAL_ALIGN_CHOICES = [
+    ("left", _("Left")),
+    ("center", _("Center")),
+    ("right", _("Right")),
+]
+
+GRID_VERTICAL_ALIGN_CHOICES = [
+    ("top", _("Top")),
+    ("middle", _("Middle")),
+    ("bottom", _("Bottom")),
+]
 
 HEADING_CHOICES = [
     ("h2", _("Heading 2")),
@@ -16,6 +58,12 @@ HEADING_CHOICES = [
     ("p", _("Paragraph")),
 ]
 
+HEADING_CHOICES_2_5 = [
+    ("h2", _("Heading 2")),
+    ("h3", _("Heading 3")),
+    ("h4", _("Heading 4")),
+    ("h5", _("Heading 5")),
+]
 
 HORIZONTAL_CARD_IMAGE_RATIOS = [
     ("fr-card--horizontal-tier", "1/3"),

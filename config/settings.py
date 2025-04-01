@@ -35,7 +35,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True if os.getenv("DEBUG") == "True" else False
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1, localhost").replace(" ", "").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,.localhost").replace(" ", "").split(",")
 
 HOST_URL = os.getenv("HOST_URL", "localhost")
 
@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "dashboard",
     "wagtail.contrib.forms",
     "wagtail.contrib.redirects",
+    "wagtail.contrib.routable_page",
     "wagtail.contrib.settings",
     "wagtail.embeds",
     "wagtail.sites",
@@ -67,16 +68,20 @@ INSTALLED_APPS = [
     "wagtail_localize",
     "wagtail_localize.locales",
     "taggit",
+    "wagtail.api.v2",
+    "rest_framework",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "django.contrib.sitemaps",
     "django.contrib.staticfiles",
     "widget_tweaks",
     "dsfr",
     "sass_processor",
     "content_manager",
     "blog",
+    "events",
     "forms",
 ]
 
@@ -187,8 +192,6 @@ TIME_ZONE = "Europe/Paris"
 
 USE_I18N = True
 
-USE_L10N = True
-
 USE_TZ = True
 
 WAGTAIL_I18N_ENABLED = True
@@ -197,6 +200,8 @@ WAGTAIL_CONTENT_LANGUAGES = LANGUAGES = [
     ("en", "English"),
     ("fr", "French"),
 ]
+
+LOCALE_PATHS = ["locale"]
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
@@ -265,8 +270,14 @@ WAGTAILADMIN_BASE_URL = f"{os.getenv('HOST_PROTO', 'https')}://{HOST_URL}"
 HOST_PORT = os.getenv("HOST_PORT", "")
 if HOST_PORT != "":
     WAGTAILADMIN_BASE_URL = f"{WAGTAILADMIN_BASE_URL}:{HOST_PORT}"
+WAGTAILAPI_BASE_URL = WAGTAILADMIN_BASE_URL
 
 WAGTAILADMIN_PATH = os.getenv("WAGTAILADMIN_PATH", "cms-admin/")
+
+WAGTAIL_FRONTEND_LOGIN_URL = LOGIN_URL = f"/{WAGTAILADMIN_PATH}login/"
+LOGOUT_URL = f"/{WAGTAILADMIN_PATH}logout/"
+
+WAGTAIL_PASSWORD_REQUIRED_TEMPLATE = "content_manager/password_required.html"
 
 # Disable Gravatar service
 WAGTAIL_GRAVATAR_PROVIDER_URL = None
@@ -307,6 +318,10 @@ WAGTAILMENUS_FLAT_MENUS_HANDLE_CHOICES = (
 )
 
 WAGTAILIMAGES_EXTENSIONS = ["gif", "jpg", "jpeg", "png", "webp", "svg"]
+SF_SCHEME_DEPENDENT_SVGS = True if os.getenv("SF_SCHEME_DEPENDENT_SVGS", False) == "True" else False
+
+# Allows for complex Streamfields without completely removing checks
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
 # Email settings
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "")
@@ -324,6 +339,43 @@ if DEFAULT_FROM_EMAIL:
     EMAIL_SSL_CERTFILE = os.getenv("EMAIL_SSL_CERTFILE", None)
 
 WAGTAIL_PASSWORD_RESET_ENABLED = os.getenv("WAGTAIL_PASSWORD_RESET_ENABLED", False)
+
+# (Optional) ProConnect settings
+PROCONNECT_ACTIVATED = True if os.getenv("PROCONNECT_ACTIVATED", False) == "True" else False
+OIDC_CREATE_USER = True if os.getenv("PROCONNECT_CREATE_USER", "True") == "True" else False
+OIDC_RP_CLIENT_ID = os.getenv("PROCONNECT_CLIENT_ID", "")
+OIDC_RP_CLIENT_SECRET = os.getenv("PROCONNECT_CLIENT_SECRET", "")
+OIDC_RP_SCOPES = os.getenv("PROCONNECT_SCOPES", "openid given_name usual_name email siret uid")
+OIDC_RP_SIGN_ALGO = os.getenv("PROCONNECT_SIGN_ALGO", "RS256")
+OIDC_STORE_ID_TOKEN = True
+PROCONNECT_DOMAIN = os.getenv("PROCONNECT_DOMAIN", "fca.integ01.dev-agentconnect.fr")
+PROCONNECT_API_ROOT = os.getenv("PROCONNECT_API_ROOT", f"https://{PROCONNECT_DOMAIN}/api/v2")
+OIDC_OP_JWKS_ENDPOINT = f"{PROCONNECT_API_ROOT}/jwks"
+OIDC_OP_AUTHORIZATION_ENDPOINT = f"{PROCONNECT_API_ROOT}/authorize"
+OIDC_OP_TOKEN_ENDPOINT = f"{PROCONNECT_API_ROOT}/token"
+OIDC_OP_USER_ENDPOINT = f"{PROCONNECT_API_ROOT}/userinfo"
+OIDC_OP_LOGOUT_ENDPOINT = f"{PROCONNECT_API_ROOT}/session/end"
+USER_OIDC_ESSENTIAL_CLAIMS = ["email"]
+OIDC_AUTH_REQUEST_EXTRA_PARAMS = {"acr_values": "eidas1"}
+OIDC_REDIRECT_ALLOWED_HOSTS = ALLOWED_HOSTS
+PROCONNECT_USER_CREATION_FILTER = os.getenv("PROCONNECT_USER_CREATION_FILTER", None)
+LASUITE_DOMAINE_API_KEY = os.getenv("LASUITE_DOMAINE_API_KEY", None)
+
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/"
+
+if PROCONNECT_ACTIVATED:
+    INSTALLED_APPS += [
+        "mozilla_django_oidc",
+        "proconnect",
+    ]
+
+    AUTHENTICATION_BACKENDS = [
+        "django.contrib.auth.backends.ModelBackend",
+        "proconnect.backends.OIDCAuthenticationBackend",
+    ]
+
+    LOGOUT_URL = "/oidc/logout/"
 
 # CSRF
 CSRF_TRUSTED_ORIGINS = []

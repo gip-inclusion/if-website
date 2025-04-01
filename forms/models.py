@@ -6,6 +6,7 @@ from dsfr.forms import DsfrDjangoTemplates
 from dsfr.utils import dsfr_input_class_attr
 from modelcluster.fields import ParentalKey
 from wagtail.admin.panels import FieldPanel, FieldRowPanel, InlinePanel, MultiFieldPanel
+from wagtail.api import APIField
 from wagtail.contrib.forms.forms import BaseForm, FormBuilder
 from wagtail.contrib.forms.models import AbstractEmailForm, AbstractFormField
 from wagtail.contrib.forms.panels import FormSubmissionsPanel
@@ -37,10 +38,12 @@ class FormField(AbstractFormField):
         verbose_name_plural = _("Form fields")
 
 
-class SitesFacilesBaseForm(BaseForm):
+class SitesFacilesCustomForm(BaseForm):
     """
     A base form that adds the necessary DSFR class on relevant fields
     """
+
+    template_name = "dsfr/form_snippet.html"  # type: ignore
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -63,7 +66,7 @@ class SitesFacilesFormBuilder(FormBuilder):
         return forms.DateField(**options)
 
     def get_form_class(self):
-        return type("WagtailForm", (SitesFacilesBaseForm,), self.formfields)
+        return type("WagtailForm", (SitesFacilesCustomForm,), self.formfields)
 
 
 class FormPage(AbstractEmailForm):
@@ -88,6 +91,12 @@ class FormPage(AbstractEmailForm):
             _("E-mail notification when an answer is sent"),
             help_text=_("Optional, will only work if SMTP parameters have been set."),
         ),
+    ]
+
+    api_fields = [
+        APIField("intro"),
+        APIField("thank_you_text"),
+        APIField("form_fields"),
     ]
 
     class Meta:
